@@ -1,0 +1,7 @@
+{
+  "name": "fileManager",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "vue-vite"
+}
