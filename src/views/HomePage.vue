@@ -8,7 +8,7 @@
     </ion-header>
     <ion-content :fullscreen="true">
       <ion-list v-if="files.length > 0">
-        <ion-item v-for="file in filteredFiles" :key="file.path" @click="toggleFile(file)" :style="{ 'padding-left': `${file.depth * 20}px` }" button>
+        <ion-item v-for="file in filteredFiles" :key="file.path" @click="toggleFile(file)" @touchstart="startLongPress($event, file)" @touchend="clearLongPress" @mousedown="startLongPress($event, file)" @mouseup="clearLongPress" @mouseleave="clearLongPress" :style="{ 'padding-left': `${file.depth * 20}px` }" button>
           <ion-checkbox v-if="isSelectionMode" slot="start" :checked="selectedItems[file.path]" @ionChange="selectedItems[file.path] = $event.detail.checked" />
           <ion-icon :icon="file.isDirectory ? folder : document" :color="file.isDirectory && file.expanded ? 'primary' : ''" slot="start" />
           <ion-label>
@@ -90,6 +90,37 @@
         </ion-content>
       </ion-modal>
 
+      <ion-modal :is-open="isMoveModalOpen" @didDismiss="isMoveModalOpen = false">
+        <ion-header>
+          <ion-toolbar>
+            <ion-title>Datei verschieben</ion-title>
+            <ion-buttons slot="end">
+              <ion-button @click="isMoveModalOpen = false">Abbrechen</ion-button>
+            </ion-buttons>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content class="ion-padding">
+          <ion-item>
+            <ion-label>Datei</ion-label>
+            <ion-text>{{ selectedFile?.name || 'Keine Datei ausgewählt' }}</ion-text>
+          </ion-item>
+          <ion-item>
+            <ion-label>Zielordner</ion-label>
+            <ion-select v-model="moveTargetFolder" placeholder="Ordner auswählen">
+              <ion-select-option value="">Stammverzeichnis</ion-select-option>
+              <ion-select-option v-for="folder in directories" :key="folder.path" :value="folder.path">
+                {{ folder.name }}
+              </ion-select-option>
+            </ion-select>
+          </ion-item>
+          <ion-item>
+            <ion-label>Speicherort</ion-label>
+            <ion-text>{{ moveTargetPath || 'Bitte Zielordner auswählen' }}</ion-text>
+          </ion-item>
+          <ion-button expand="block" @click="moveItem">Verschieben</ion-button>
+        </ion-content>
+      </ion-modal>
+
       <ion-action-sheet
           :is-open="isActionSheetOpen"
           header="Aktionen"
@@ -98,15 +129,21 @@
       ></ion-action-sheet>
 
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button color="primary" @click="showAddModal">
+        <ion-fab-button :disabled="isSelectionMode" color="primary" @click="showAddModal" v-if="!isSelectionMode">
           <ion-icon :icon="add"></ion-icon>
         </ion-fab-button>
-        <ion-fab-list side="top">
-          <ion-fab-button v-if="!isSelectionMode" color="secondary" @click="toggleSelectionMode">
-            <ion-icon :icon="checkbox"></ion-icon>
-          </ion-fab-button>
-          <ion-fab-button v-else color="danger" @click="deleteSelectedItems">
+        <ion-fab-list side="top" v-if="isSelectionMode">
+          <ion-fab-button color="danger" @click="deleteSelectedItems">
             <ion-icon :icon="trash"></ion-icon>
+            <ion-label>Löschen</ion-label>
+          </ion-fab-button>
+          <ion-fab-button color="secondary" @click="showMoveModal">
+            <ion-icon :icon="move"></ion-icon>
+            <ion-label>Verschieben</ion-label>
+          </ion-fab-button>
+          <ion-fab-button color="tertiary" @click="showCopyModal">
+            <ion-icon :icon="copy"></ion-icon>
+            <ion-label>Kopieren</ion-label>
           </ion-fab-button>
         </ion-fab-list>
       </ion-fab>
@@ -123,7 +160,7 @@ import {
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
 import { Capacitor } from '@capacitor/core';
-import { folder, document, add, remove, checkbox, trash } from 'ionicons/icons';
+import { folder, document, add, remove, checkbox, trash, move, copy } from 'ionicons/icons';
 import { ref, computed, watch, onMounted } from 'vue';
 
 const files = ref([]);
@@ -135,9 +172,12 @@ const targetFolder = ref('');
 const isActionSheetOpen = ref(false);
 const isCopyModalOpen = ref(false);
 const copyTargetFolder = ref('');
+const isMoveModalOpen = ref(false);
+const moveTargetFolder = ref('');
 const selectedFile = ref(null);
 const isSelectionMode = ref(false);
 const selectedItems = ref({});
+let longPressTimer = null;
 
 const directories = computed(() => files.value.filter(file => file.isDirectory));
 
@@ -149,6 +189,11 @@ const targetPath = computed(() => {
 const copyTargetPath = computed(() => {
   if (!selectedFile.value || !selectedFile.value.name) return '';
   return copyTargetFolder.value ? `${copyTargetFolder.value}/${selectedFile.value.name}` : `${selectedFile.value.name}`;
+});
+
+const moveTargetPath = computed(() => {
+  if (!selectedFile.value || !selectedFile.value.name) return '';
+  return moveTargetFolder.value ? `${moveTargetFolder.value}/${selectedFile.value.name}` : `${selectedFile.value.name}`;
 });
 
 const filteredFiles = computed(() => {
@@ -183,6 +228,15 @@ const actionSheetButtons = computed(() => [
     }
   },
   {
+    text: 'Verschieben',
+    handler: () => {
+      if (selectedFile.value && !selectedFile.value.isDirectory) {
+        moveTargetFolder.value = '';
+        isMoveModalOpen.value = true;
+      }
+    }
+  },
+  {
     text: 'Löschen',
     role: 'destructive',
     handler: () => deleteItem(selectedFile.value)
@@ -207,6 +261,40 @@ const toggleFile = (file) => {
 const toggleExpand = (file) => {
   if (file.isDirectory) {
     file.expanded = !file.expanded;
+  }
+};
+
+const startLongPress = (event, file) => {
+  if (!isSelectionMode.value) {
+    longPressTimer = setTimeout(() => {
+      isSelectionMode.value = true;
+      selectedItems.value[file.path] = true;
+    }, 400);
+  }
+};
+
+const clearLongPress = () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+};
+
+const showCopyModal = () => {
+  if (selectedFile.value && !selectedFile.value.isDirectory) {
+    copyTargetFolder.value = '';
+    isCopyModalOpen.value = true;
+  } else {
+    errorMessage.value = 'Nur Dateien können kopiert werden.';
+  }
+};
+
+const showMoveModal = () => {
+  if (selectedFile.value && !selectedFile.value.isDirectory) {
+    moveTargetFolder.value = '';
+    isMoveModalOpen.value = true;
+  } else {
+    errorMessage.value = 'Nur Dateien können verschoben werden.';
   }
 };
 
@@ -323,6 +411,27 @@ const copyItem = async () => {
   }
 };
 
+const moveItem = async () => {
+  try {
+    if (!selectedFile.value) {
+      return;
+    }
+
+    await Filesystem.move({
+      from: selectedFile.value.path,
+      to: moveTargetPath.value,
+      directory: Directory.Data,
+      toDirectory: Directory.Data
+    });
+
+    isMoveModalOpen.value = false;
+    await readFileSystem();
+  } catch (error) {
+    console.error('Fehler beim Verschieben der Datei:', error);
+    errorMessage.value = `Fehler beim Verschieben: ${error.message}`;
+  }
+};
+
 const deleteItem = async (file) => {
   try {
     if (file.isDirectory) {
@@ -404,16 +513,12 @@ const getMimeType = (filename) => {
   return mimeTypes[ext] || 'application/octet-stream';
 };
 
-const toggleSelectionMode = () => {
-  isSelectionMode.value = !isSelectionMode.value;
-  if (!isSelectionMode.value) {
+watch(selectedItems, (newVal) => {
+  if (isSelectionMode.value && Object.values(newVal).every(val => !val)) {
+    isSelectionMode.value = false;
     selectedItems.value = {};
   }
-};
-
-watch(isSelectionMode, (newVal) => {
-  if (!newVal) selectedItems.value = {};
-});
+}, { deep: true });
 
 onMounted(() => {
   readFileSystem();
@@ -434,12 +539,22 @@ ion-fab-button {
   --background: var(--ion-color-primary);
   --background-activated: var(--ion-color-primary-shade);
 }
-ion-fab-list ion-fab-button {
-  --background: var(--ion-color-secondary);
-  --background-activated: var(--ion-color-secondary-shade);
+ion-fab-button[disabled] {
+  --background: var(--ion-color-medium);
+  --background-activated: var(--ion-color-medium-shade);
+  opacity: 0.5;
 }
-ion-fab-list ion-fab-button:nth-child(2) {
+ion-fab-list ion-fab-button {
   --background: var(--ion-color-danger);
   --background-activated: var(--ion-color-danger-shade);
 }
+ion-fab-list ion-fab-button:nth-child(2) {
+  --background: var(--ion-color-secondary);
+  --background-activated: var(--ion-color-secondary-shade);
+}
+ion-fab-list ion-fab-button:nth-child(3) {
+  --background: var(--ion-color-tertiary);
+  --background-activated: var(--ion-color-tertiary-shade);
+}
 </style>
+```
