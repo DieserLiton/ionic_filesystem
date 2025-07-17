@@ -1,27 +1,12 @@
+```vue
 <template>
   <ion-page>
     <ion-header>
       <ion-toolbar>
         <ion-title>Dateimanager</ion-title>
-
-        <ion-buttons slot="end">
-          <ion-button color="primary" @click="showAddModal">
-            <ion-icon :icon="add" slot="start"></ion-icon>
-            Hinzufügen
-          </ion-button>
-          <ion-button v-if="!isSelectionMode" color="secondary" @click="toggleSelectionMode">
-            <ion-icon :icon="checkbox" slot="start"></ion-icon>
-            Auswahl
-          </ion-button>
-          <ion-button v-else color="danger" @click="deleteSelectedItems">
-            <ion-icon :icon="trash" slot="start"></ion-icon>
-            Löschen
-          </ion-button>
-        </ion-buttons>
       </ion-toolbar>
     </ion-header>
     <ion-content :fullscreen="true">
-
       <ion-list v-if="files.length > 0">
         <ion-item v-for="file in filteredFiles" :key="file.path" @click="toggleFile(file)" :style="{ 'padding-left': `${file.depth * 20}px` }" button>
           <ion-checkbox v-if="isSelectionMode" slot="start" :checked="selectedItems[file.path]" @ionChange="selectedItems[file.path] = $event.detail.checked" />
@@ -111,6 +96,20 @@
           :buttons="actionSheetButtons"
           @didDismiss="isActionSheetOpen = false"
       ></ion-action-sheet>
+
+      <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+        <ion-fab-button color="primary" @click="showAddModal">
+          <ion-icon :icon="add"></ion-icon>
+        </ion-fab-button>
+        <ion-fab-list side="top">
+          <ion-fab-button v-if="!isSelectionMode" color="secondary" @click="toggleSelectionMode">
+            <ion-icon :icon="checkbox"></ion-icon>
+          </ion-fab-button>
+          <ion-fab-button v-else color="danger" @click="deleteSelectedItems">
+            <ion-icon :icon="trash"></ion-icon>
+          </ion-fab-button>
+        </ion-fab-list>
+      </ion-fab>
     </ion-content>
   </ion-page>
 </template>
@@ -119,7 +118,7 @@
 import {
   IonContent, IonHeader, IonPage, IonTitle, IonToolbar, IonList, IonItem, IonLabel, IonText,
   IonButton, IonModal, IonButtons, IonInput, IonSelect, IonSelectOption, IonActionSheet,
-  IonIcon, IonCheckbox
+  IonIcon, IonCheckbox, IonFab, IonFabButton, IonFabList
 } from '@ionic/vue';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
@@ -430,5 +429,17 @@ ion-item {
 }
 .ion-padding {
   padding: 16px;
+}
+ion-fab-button {
+  --background: var(--ion-color-primary);
+  --background-activated: var(--ion-color-primary-shade);
+}
+ion-fab-list ion-fab-button {
+  --background: var(--ion-color-secondary);
+  --background-activated: var(--ion-color-secondary-shade);
+}
+ion-fab-list ion-fab-button:nth-child(2) {
+  --background: var(--ion-color-danger);
+  --background-activated: var(--ion-color-danger-shade);
 }
 </style>
