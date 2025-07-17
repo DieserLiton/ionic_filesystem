@@ -1,7 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
-    paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <files-path name="files" path="." />
+    <!--
+      Dieser Pfad ist für Capacitor.Directory.Data.
+      Das ist der wichtigste für deinen aktuellen Code.
+    -->
+    <files-path name="internal_files" path="." />
+
+    <!--
+      Dieser Pfad ist für Capacitor.Directory.Cache.
+    -->
+    <cache-path name="cache_files" path="." />
+
+    <!--
+      Diese Pfade sind für Capacitor.Directory.Documents und Capacitor.Directory.External.
+      Sie sind für den App-spezifischen Bereich auf dem externen Speicher.
+    -->
+    <external-files-path name="external_files" path="." />
+    <external-cache-path name="external_cache" path="." />
+
 </paths>
