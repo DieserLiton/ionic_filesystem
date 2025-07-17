@@ -129,10 +129,10 @@
       ></ion-action-sheet>
 
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button :disabled="isSelectionMode" color="primary" @click="showAddModal" v-if="!isSelectionMode">
-          <ion-icon :icon="add"></ion-icon>
+        <ion-fab-button :color="isSelectionMode ? 'medium' : 'primary'" @click="handleFabClick">
+          <ion-icon :icon="isSelectionMode ? ellipsisVertical : add"></ion-icon>
         </ion-fab-button>
-        <ion-fab-list side="top" v-if="isSelectionMode">
+        <ion-fab-list side="top" :activated="isSelectionMode">
           <ion-fab-button color="danger" @click="deleteSelectedItems">
             <ion-icon :icon="trash"></ion-icon>
             <ion-label>Löschen</ion-label>
@@ -160,7 +160,7 @@ import {
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
 import { Capacitor } from '@capacitor/core';
-import { folder, document, add, remove, checkbox, trash, move, copy } from 'ionicons/icons';
+import { folder, document, add, remove, checkbox, trash, move, copy, ellipsisVertical } from 'ionicons/icons';
 import { ref, computed, watch, onMounted } from 'vue';
 
 const files = ref([]);
@@ -278,6 +278,13 @@ const clearLongPress = () => {
     clearTimeout(longPressTimer);
     longPressTimer = null;
   }
+};
+
+const handleFabClick = () => {
+  if (!isSelectionMode.value) {
+    showAddModal();
+  }
+  // Im Auswahlmodus wird der Button nur den Dropdown-Status togglen, aber keine zusätzliche Aktion ausführen
 };
 
 const showCopyModal = () => {
@@ -539,10 +546,9 @@ ion-fab-button {
   --background: var(--ion-color-primary);
   --background-activated: var(--ion-color-primary-shade);
 }
-ion-fab-button[disabled] {
+ion-fab-button[color="medium"] {
   --background: var(--ion-color-medium);
   --background-activated: var(--ion-color-medium-shade);
-  opacity: 0.5;
 }
 ion-fab-list ion-fab-button {
   --background: var(--ion-color-danger);
