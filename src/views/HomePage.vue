@@ -21,7 +21,6 @@
       </ion-toolbar>
     </ion-header>
 
-    <!-- Mehr Abstand oben -->
     <ion-content :fullscreen="true" class="with-gap">
       <ion-list inset>
         <ion-item v-if="entries.length === 0">
@@ -54,23 +53,19 @@
         </ion-item>
       </ion-list>
 
-      <!-- Action Sheet pro Eintrag -->
       <ion-action-sheet
           :is-open="actionEntry !== null"
           header="Aktionen"
           :buttons="actionButtons"
           @didDismiss="actionEntry = null"
-      >
-      </ion-action-sheet>
+      />
 
-      <!-- FAB: Hinzufügen -->
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
         <ion-fab-button @click="openAddSheet" aria-label="Hinzufügen">
           <ion-icon :icon="addOutline" />
         </ion-fab-button>
       </ion-fab>
 
-      <!-- Action Sheet: Hinzufügen -->
       <ion-action-sheet
           :is-open="isAddOpen"
           header="Hinzufügen"
@@ -98,7 +93,7 @@ import {
   openOutline
 } from 'ionicons/icons';
 
-import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import { FilePicker } from '@capawesome/capacitor-file-picker';
 import { Share } from '@capacitor/share';
 
@@ -108,12 +103,12 @@ type FsEntry = {
   isDirectory: boolean;
   size?: number;
   mtime?: number;
-  uri?: string;          // falls Filesystem.readdir liefert
-  mimeType?: string;     // für Dateien (geschätzt über Extension)
+  uri?: string;
+  mimeType?: string;
 };
 
-const ROOT_DIR = Directory.Data; // App-intern (Android/iOS)
-const pathStack = ref<string[]>([]); // z.B. ['Fotos','Urlaub']
+const ROOT_DIR = Directory.Data; // App-intern
+const pathStack = ref<string[]>([]);
 
 const entries = ref<FsEntry[]>([]);
 const actionEntry = ref<FsEntry | null>(null);
@@ -125,11 +120,9 @@ const displayPath = computed(() => ['/', ...pathStack.value]);
 function joinPath(...parts: string[]) {
   return parts.filter(Boolean).join('/').replace(/\/+/g, '/');
 }
-
 function currentPath(): string {
   return joinPath(...pathStack.value);
 }
-
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes/1024).toFixed(1)} KB`;
@@ -139,29 +132,41 @@ function formatSize(bytes: number) {
 function guessMime(name: string): string {
   const ext = (name.split('.').pop() || '').toLowerCase();
   const map: Record<string, string> = {
-    'txt': 'text/plain',
-    'pdf': 'application/pdf',
-    'png': 'image/png',
-    'jpg': 'image/jpeg',
-    'jpeg': 'image/jpeg',
-    'gif': 'image/gif',
-    'mp4': 'video/mp4',
-    'mp3': 'audio/mpeg',
-    'json': 'application/json',
-    'csv': 'text/csv',
-    'zip': 'application/zip'
+    // Text / Code
+    'txt':'text/plain','md':'text/markdown','rtf':'application/rtf','csv':'text/csv','tsv':'text/tab-separated-values',
+    'json':'application/json','yaml':'application/x-yaml','yml':'application/x-yaml','xml':'application/xml',
+    'html':'text/html','htm':'text/html','css':'text/css','js':'text/javascript','ts':'text/plain',
+    'py':'text/x-python','java':'text/x-java-source','c':'text/x-c','cpp':'text/x-c++src','cs':'text/plain',
+    // Images
+    'png':'image/png','jpg':'image/jpeg','jpeg':'image/jpeg','gif':'image/gif','webp':'image/webp','bmp':'image/bmp',
+    'heic':'image/heic','svg':'image/svg+xml','tif':'image/tiff','tiff':'image/tiff',
+    // PDF
+    'pdf':'application/pdf',
+    // Office OpenXML
+    'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    // Legacy Office
+    'doc':'application/msword','xls':'application/vnd.ms-excel','ppt':'application/vnd.ms-powerpoint',
+    // OpenDocument
+    'odt':'application/vnd.oasis.opendocument.text',
+    'ods':'application/vnd.oasis.opendocument.spreadsheet',
+    'odp':'application/vnd.oasis.opendocument.presentation',
+    // Audio
+    'mp3':'audio/mpeg','wav':'audio/wav','m4a':'audio/mp4','ogg':'audio/ogg','flac':'audio/flac',
+    // Video
+    'mp4':'video/mp4','m4v':'video/x-m4v','mov':'video/quicktime','avi':'video/x-msvideo','mkv':'video/x-matroska','webm':'video/webm',
+    // Archives
+    'zip':'application/zip','rar':'application/vnd.rar','7z':'application/x-7z-compressed','tar':'application/x-tar','gz':'application/gzip',
+    // Misc
+    'apk':'application/vnd.android.package-archive','pdfa':'application/pdf'
   };
   return map[ext] || 'application/octet-stream';
 }
 
 async function refresh() {
   try {
-    const res = await Filesystem.readdir({
-      directory: ROOT_DIR,
-      path: currentPath() || ''
-    });
-
-    // Filesystem v6/7: { files: [{ name, type, size, mtime, uri }] }
+    const res = await Filesystem.readdir({ directory: ROOT_DIR, path: currentPath() || '' });
     const list: FsEntry[] = (res.files || []).map((f: any) => ({
       name: f.name,
       fullPath: joinPath(currentPath(), f.name),
@@ -171,10 +176,7 @@ async function refresh() {
       uri: f.uri,
       mimeType: f.type === 'file' ? guessMime(f.name) : undefined
     }))
-        .sort((a, b) => {
-          if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-          return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-        });
+        .sort((a, b) => (a.isDirectory !== b.isDirectory) ? (a.isDirectory ? -1 : 1) : a.name.localeCompare(b.name));
 
     entries.value = list;
   } catch (err) {
@@ -188,59 +190,26 @@ function enterFolder(entry: FsEntry) {
   pathStack.value.push(entry.name);
   refresh();
 }
-
-function goUp() {
-  pathStack.value.pop();
-  refresh();
-}
-
-function openActions(entry: FsEntry) {
-  actionEntry.value = entry;
-}
+function goUp() { pathStack.value.pop(); refresh(); }
+function openActions(entry: FsEntry) { actionEntry.value = entry; }
 
 const actionButtons = computed(() => {
   if (!actionEntry.value) return [];
   const e = actionEntry.value;
   return [
-    {
-      text: e.isDirectory ? 'Ordner öffnen' : 'Datei öffnen',
-      icon: openOutline,
-      handler: () => e.isDirectory ? enterFolder(e) : openFile(e)
-    },
-    {
-      text: 'Löschen',
-      role: 'destructive',
-      icon: trashOutline,
-      handler: () => deleteEntry(e)
-    },
-    {
-      text: 'Abbrechen',
-      role: 'cancel'
-    }
+    { text: e.isDirectory ? 'Ordner öffnen' : 'Datei öffnen', icon: openOutline, handler: () => e.isDirectory ? enterFolder(e) : openFile(e) },
+    { text: 'Löschen', role: 'destructive', icon: trashOutline, handler: () => deleteEntry(e) },
+    { text: 'Abbrechen', role: 'cancel' }
   ];
 });
 
-function openAddSheet() {
-  isAddOpen.value = true;
-}
+function openAddSheet() { isAddOpen.value = true; }
 
 const addButtons = [
-  {
-    text: 'Leere Datei erstellen',
-    handler: () => promptCreateFile()
-  },
-  {
-    text: 'Datei importieren',
-    handler: () => importFilesFromDevice()
-  },
-  {
-    text: 'Ordner erstellen',
-    handler: () => promptCreateFolder()
-  },
-  {
-    text: 'Abbrechen',
-    role: 'cancel'
-  }
+  { text: 'Leere Datei erstellen', handler: () => promptCreateFile() },
+  { text: 'Datei importieren',     handler: () => importFilesFromDevice() },
+  { text: 'Ordner erstellen',      handler: () => promptCreateFolder() },
+  { text: 'Abbrechen', role: 'cancel' }
 ];
 
 async function promptCreateFile() {
@@ -248,56 +217,40 @@ async function promptCreateFile() {
   if (!name) return;
   await createEmptyFile(name);
 }
-
 async function createEmptyFile(name: string) {
   try {
-    const finalName = await ensureUniqueName(name, /*isDir*/ false);
+    const finalName = await ensureUniqueName(name, false);
     await Filesystem.writeFile({
       directory: ROOT_DIR,
       path: joinPath(currentPath(), finalName),
-      data: '',            // leere Datei
+      data: '',
       recursive: true
     });
     await refresh();
   } catch (err) {
     console.error('writeFile failed', err);
     alert('Datei konnte nicht erstellt werden.');
-  } finally {
-    isAddOpen.value = false;
-  }
+  } finally { isAddOpen.value = false; }
 }
 
 async function ensureUniqueName(name: string, isDir: boolean): Promise<string> {
   const base = name.trim();
   if (!base) throw new Error('Ungültiger Name');
-
-  let candidate = base;
-  let i = 1;
-
+  let candidate = base, i = 1;
   while (await entryExists(candidate, isDir)) {
     const dot = candidate.lastIndexOf('.');
-    if (!isDir && dot > 0) {
-      const stem = candidate.slice(0, dot);
-      const ext  = candidate.slice(dot);
-      candidate = `${stem} (${i++})${ext}`;
-    } else {
-      candidate = `${base} (${i++})`;
-    }
+    candidate = (!isDir && dot > 0)
+        ? `${candidate.slice(0, dot)} (${i++})${candidate.slice(dot)}`
+        : `${base} (${i++})`;
   }
   return candidate;
 }
-
 async function entryExists(name: string, isDir: boolean): Promise<boolean> {
   try {
-    const list = await Filesystem.readdir({
-      directory: ROOT_DIR,
-      path: currentPath() || ''
-    });
+    const list = await Filesystem.readdir({ directory: ROOT_DIR, path: currentPath() || '' });
     const files: any[] = list.files || [];
     return files.some(f => f.name === name && (isDir ? f.type === 'directory' : f.type === 'file'));
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 async function promptCreateFolder() {
@@ -305,77 +258,64 @@ async function promptCreateFolder() {
   if (!name) return;
   await createFolder(name);
 }
-
 async function createFolder(name: string) {
   try {
-    const finalName = await ensureUniqueName(name, /*isDir*/ true);
-    await Filesystem.mkdir({
-      directory: ROOT_DIR,
-      path: joinPath(currentPath(), finalName),
-      recursive: false
-    });
+    const finalName = await ensureUniqueName(name, true);
+    await Filesystem.mkdir({ directory: ROOT_DIR, path: joinPath(currentPath(), finalName), recursive: false });
     await refresh();
   } catch (err) {
     console.error('mkdir failed', err);
     alert('Ordner konnte nicht erstellt werden.');
-  } finally {
-    isAddOpen.value = false;
-  }
+  } finally { isAddOpen.value = false; }
 }
 
 async function deleteEntry(entry: FsEntry) {
   try {
     if (entry.isDirectory) {
-      await Filesystem.rmdir({
-        directory: ROOT_DIR,
-        path: entry.fullPath,
-        recursive: true
-      });
+      await Filesystem.rmdir({ directory: ROOT_DIR, path: entry.fullPath, recursive: true });
     } else {
-      await Filesystem.deleteFile({
-        directory: ROOT_DIR,
-        path: entry.fullPath
-      });
+      await Filesystem.deleteFile({ directory: ROOT_DIR, path: entry.fullPath });
     }
     await refresh();
   } catch (err) {
     console.error('delete failed', err);
     alert('Löschen fehlgeschlagen.');
-  } finally {
-    actionEntry.value = null;
-  }
+  } finally { actionEntry.value = null; }
 }
 
-/**
- * Datei öffnen:
- * 1) Wenn cordova-plugin-file-opener2 vorhanden ist → direkt öffnen
- * 2) Fallback → System-Share-Sheet
- */
+
 async function openFile(entry: FsEntry) {
   try {
-    const { uri } = await Filesystem.getUri({
-      directory: ROOT_DIR,
-      path: entry.fullPath
-    });
-    const mime = entry.mimeType || guessMime(entry.name);
-
+    const { uri } = await Filesystem.getUri({ directory: ROOT_DIR, path: entry.fullPath });
+    const exactMime = entry.mimeType || guessMime(entry.name);
     const fileOpener2 = (window as any)?.cordova?.plugins?.fileOpener2;
 
-    if (fileOpener2 && typeof fileOpener2.open === 'function') {
-      await new Promise<void>((resolve, reject) => {
-        fileOpener2.open(
-            uri,
-            mime,
-            { error: (e: any) => reject(e), success: () => resolve() }
-        );
-      });
-    } else {
-      await Share.share({
-        title: entry.name,
-        url: uri,
-        dialogTitle: 'Mit App öffnen'
-      });
+    if (fileOpener2?.open) {
+      // Erst mit exaktem MIME probieren
+      try {
+        await new Promise<void>((resolve, reject) => {
+          fileOpener2.open(uri, exactMime, { error: (e: any) => reject(e), success: () => resolve() });
+        });
+        return;
+      } catch (e) {
+        // Dann breit mit */* (zeigt dem Nutzer ALLE Apps, die irgendwas können)
+        try {
+          await new Promise<void>((resolve, reject) => {
+            fileOpener2.open(uri, '*/*', { error: (err: any) => reject(err), success: () => resolve() });
+          });
+          return;
+        } catch (e2) {
+          // weiter zum Share-Fallback
+        }
+      }
     }
+
+    // Share-Fallback
+    await Share.share({
+      title: entry.name,
+      url: uri,
+      dialogTitle: 'Mit App öffnen'
+    });
   } catch (err) {
     console.error('open file failed', err);
     alert('Datei konnte nicht geöffnet werden.');
@@ -383,45 +323,47 @@ async function openFile(entry: FsEntry) {
 }
 
 /**
- * Dateien per System-Filepicker importieren:
- * - multiple Auswahl
- * - liest Base64 (readData: true) und schreibt als Datei in das aktuelle App-Verzeichnis
- * - automatische Umbenennung bei Kollisionen
+ * Dateien importieren:
+ * - liest Base64 (readData: true), schreibt in App-Verzeichnis
+ * - bei fehlenden Base64-Daten fallback auf copyFile per URI
+ * - auto-Umbenennung bei Kollision
  */
 async function importFilesFromDevice() {
   try {
-    const res = await FilePicker.pickFiles({ multiple: true, readData: true });
+    const res = await (FilePicker as any).pickFiles({ multiple: true, readData: true });
     const picked = res.files || [];
     if (picked.length === 0) return;
 
     for (const file of picked) {
       const name = file.name || 'unbenannt';
-      const data = (file as any).data as string | undefined; // Base64
-      if (!data) {
-        console.warn('Kein Base64-Datenfeld enthalten, überspringe:', file);
-        continue;
-      }
-
-      const targetName = await ensureUniqueName(name, /*isDir*/ false);
+      const targetName = await ensureUniqueName(name, false);
       const destPath = joinPath(currentPath(), targetName);
+      const base64 = (file as any).data as string | undefined;
 
-      await Filesystem.writeFile({
-        directory: ROOT_DIR,
-        path: destPath,
-        data,               // Base64
-        encoding: Encoding.BASE64,
-        recursive: true
-      });
+      if (base64) {
+        await Filesystem.writeFile({
+          directory: ROOT_DIR,
+          path: destPath,
+          data: base64,
+          encoding: 'base64' as any,
+          recursive: true
+        });
+      } else {
+        const sourceUri = (file as any).uri || (file as any).path || (file as any).webPath;
+        if (!sourceUri) continue;
+        await (FilePicker as any).copyFile({
+          sourcePath: sourceUri,
+          directory: ROOT_DIR,
+          path: destPath
+        });
+      }
     }
-
     await refresh();
   } catch (err: any) {
     if (String(err?.message || '').toLowerCase().includes('canceled')) return;
     console.error('importFilesFromDevice failed', err);
     alert('Import fehlgeschlagen.');
-  } finally {
-    isAddOpen.value = false;
-  }
+  } finally { isAddOpen.value = false; }
 }
 
 onMounted(() => refresh());
@@ -437,9 +379,5 @@ ion-avatar {
   justify-content: center;
   background: #eef2ff;
 }
-
-/* Mehr Luft zwischen Pfadleiste (Header) und Liste */
-.with-gap {
-  --padding-top: 16px;
-}
+.with-gap { --padding-top: 16px; }
 </style>
