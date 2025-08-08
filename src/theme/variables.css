@@ -1,2 +1,39 @@
 /* For information on how to create your own theme, please see:
 http://ionicframework.com/docs/theming/ */
+:root {
+    --ion-color-primary: #2d6cdf;
+    --ion-color-primary-contrast: #ffffff;
+    --ion-font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
+
+ion-content {
+    --padding-top: 0;
+    --padding-bottom: 0;
+    --background: #f8f9fb;
+}
+
+.file-icon {
+    font-size: 20px;
+    opacity: 0.8;
+}
+
+.entry-subtle {
+    color: #6b7280;
+    font-size: 12px;
+}
+
+.path-chip {
+    font-size: 12px;
+    --background: #eef2ff;
+    --color: #1e3a8a;
+}
+
+ion-item {
+    --background: #ffffff;
+}
+
+ion-header, ion-toolbar {
+    --background: #ffffff;
+    --color: #111827;
+    border-bottom: 1px solid #e5e7eb;
+}

@@ -1,13 +1,12 @@
-import type { CapacitorConfig } from '@capacitor/cli';
+import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'io.ionic.starter',
-  appName: 'fileManager',
+  appId: 'com.example.filemanager',
+  appName: 'FileManager',
   webDir: 'dist',
-  plugins: {
-    Filesystem : {
-      scope : ["documents"]
-    }
+  bundledWebRuntime: false,
+  android: {
+    allowMixedContent: true
   }
 };
 

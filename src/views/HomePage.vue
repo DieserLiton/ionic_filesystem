@@ -1,566 +1,445 @@
-```vue
 <template>
   <ion-page>
     <ion-header>
       <ion-toolbar>
+        <ion-buttons slot="start" v-if="canGoUp">
+          <ion-button @click="goUp" aria-label="Nach oben">
+            <ion-icon :icon="chevronBackOutline" />
+          </ion-button>
+        </ion-buttons>
         <ion-title>Dateimanager</ion-title>
+        <ion-buttons slot="end">
+          <ion-button @click="refresh" aria-label="Aktualisieren">
+            <ion-icon :icon="refreshOutline" />
+          </ion-button>
+        </ion-buttons>
+      </ion-toolbar>
+      <ion-toolbar>
+        <ion-chip class="path-chip" v-for="(seg, i) in displayPath" :key="i">
+          <ion-label>{{ seg || 'Root' }}</ion-label>
+        </ion-chip>
       </ion-toolbar>
     </ion-header>
-    <ion-content :fullscreen="true">
-      <ion-list v-if="files.length > 0">
-        <ion-item v-for="file in filteredFiles" :key="file.path" @click="toggleFile(file)" @touchstart="startLongPress($event, file)" @touchend="clearLongPress" @mousedown="startLongPress($event, file)" @mouseup="clearLongPress" @mouseleave="clearLongPress" :style="{ 'padding-left': `${file.depth * 20}px` }" button>
-          <ion-checkbox v-if="isSelectionMode" slot="start" :checked="selectedItems[file.path]" @ionChange="selectedItems[file.path] = $event.detail.checked" />
-          <ion-icon :icon="file.isDirectory ? folder : document" :color="file.isDirectory && file.expanded ? 'primary' : ''" slot="start" />
+
+    <!-- Mehr Abstand oben -->
+    <ion-content :fullscreen="true" class="with-gap">
+      <ion-list inset>
+        <ion-item v-if="entries.length === 0">
+          <ion-label>Keine Dateien/Ordner im aktuellen Verzeichnis.</ion-label>
+        </ion-item>
+
+        <ion-item
+            v-for="entry in entries"
+            :key="entry.fullPath"
+            button
+            detail
+            @click="entry.isDirectory ? enterFolder(entry) : openFile(entry)"
+        >
+          <ion-avatar slot="start">
+            <ion-icon class="file-icon" :icon="entry.isDirectory ? folderOutline : documentOutline" />
+          </ion-avatar>
           <ion-label>
-            {{ file.name }}
+            <h2>{{ entry.name }}</h2>
+            <p class="entry-subtle">
+              <span v-if="entry.isDirectory">Ordner</span>
+              <span v-else> Datei</span>
+              <span v-if="!entry.isDirectory && entry.size !== undefined"> • {{ formatSize(entry.size) }}</span>
+            </p>
           </ion-label>
-          <ion-icon v-if="file.isDirectory" :icon="file.expanded ? remove : add" slot="end" @click.stop="toggleExpand(file)" />
+          <ion-buttons slot="end">
+            <ion-button fill="clear" @click.stop="openActions(entry)">
+              <ion-icon :icon="ellipsisVertical" />
+            </ion-button>
+          </ion-buttons>
         </ion-item>
       </ion-list>
-      <ion-text v-else class="ion-padding">
-        <p>{{ errorMessage || 'Keine Dateien gefunden.' }}</p>
-      </ion-text>
 
-      <ion-modal :is-open="isModalOpen" @didDismiss="isModalOpen = false">
-        <ion-header>
-          <ion-toolbar>
-            <ion-title>Neue Datei/Ordner</ion-title>
-            <ion-buttons slot="end">
-              <ion-button @click="isModalOpen = false">Abbrechen</ion-button>
-            </ion-buttons>
-          </ion-toolbar>
-        </ion-header>
-        <ion-content class="ion-padding">
-          <ion-item>
-            <ion-label position="stacked">Name</ion-label>
-            <ion-input v-model="newItemName" placeholder="Name eingeben"></ion-input>
-          </ion-item>
-          <ion-item>
-            <ion-label>Typ</ion-label>
-            <ion-select v-model="newItemType" placeholder="Typ auswählen">
-              <ion-select-option value="file">Datei</ion-select-option>
-              <ion-select-option value="directory">Ordner</ion-select-option>
-            </ion-select>
-          </ion-item>
-          <ion-item>
-            <ion-label>Zielordner</ion-label>
-            <ion-select v-model="targetFolder" placeholder="Ordner auswählen">
-              <ion-select-option value="">Stammverzeichnis</ion-select-option>
-              <ion-select-option v-for="folder in directories" :key="folder.path" :value="folder.path">
-                {{ folder.name }}
-              </ion-select-option>
-            </ion-select>
-          </ion-item>
-          <ion-item>
-            <ion-label>Speicherort</ion-label>
-            <ion-text>{{ targetPath || 'Bitte Name und Zielordner auswählen' }}</ion-text>
-          </ion-item>
-          <ion-button expand="block" @click="createItem">Erstellen</ion-button>
-        </ion-content>
-      </ion-modal>
-
-      <ion-modal :is-open="isCopyModalOpen" @didDismiss="isCopyModalOpen = false">
-        <ion-header>
-          <ion-toolbar>
-            <ion-title>Datei kopieren</ion-title>
-            <ion-buttons slot="end">
-              <ion-button @click="isCopyModalOpen = false">Abbrechen</ion-button>
-            </ion-buttons>
-          </ion-toolbar>
-        </ion-header>
-        <ion-content class="ion-padding">
-          <ion-item>
-            <ion-label>Datei</ion-label>
-            <ion-text>{{ selectedFile?.name || 'Keine Datei ausgewählt' }}</ion-text>
-          </ion-item>
-          <ion-item>
-            <ion-label>Zielordner</ion-label>
-            <ion-select v-model="copyTargetFolder" placeholder="Ordner auswählen">
-              <ion-select-option value="">Stammverzeichnis</ion-select-option>
-              <ion-select-option v-for="folder in directories" :key="folder.path" :value="folder.path">
-                {{ folder.name }}
-              </ion-select-option>
-            </ion-select>
-          </ion-item>
-          <ion-item>
-            <ion-label>Speicherort</ion-label>
-            <ion-text>{{ copyTargetPath || 'Bitte Zielordner auswählen' }}</ion-text>
-          </ion-item>
-          <ion-button expand="block" @click="copyItem">Kopieren</ion-button>
-        </ion-content>
-      </ion-modal>
-
-      <ion-modal :is-open="isMoveModalOpen" @didDismiss="isMoveModalOpen = false">
-        <ion-header>
-          <ion-toolbar>
-            <ion-title>Datei verschieben</ion-title>
-            <ion-buttons slot="end">
-              <ion-button @click="isMoveModalOpen = false">Abbrechen</ion-button>
-            </ion-buttons>
-          </ion-toolbar>
-        </ion-header>
-        <ion-content class="ion-padding">
-          <ion-item>
-            <ion-label>Datei</ion-label>
-            <ion-text>{{ selectedFile?.name || 'Keine Datei ausgewählt' }}</ion-text>
-          </ion-item>
-          <ion-item>
-            <ion-label>Zielordner</ion-label>
-            <ion-select v-model="moveTargetFolder" placeholder="Ordner auswählen">
-              <ion-select-option value="">Stammverzeichnis</ion-select-option>
-              <ion-select-option v-for="folder in directories" :key="folder.path" :value="folder.path">
-                {{ folder.name }}
-              </ion-select-option>
-            </ion-select>
-          </ion-item>
-          <ion-item>
-            <ion-label>Speicherort</ion-label>
-            <ion-text>{{ moveTargetPath || 'Bitte Zielordner auswählen' }}</ion-text>
-          </ion-item>
-          <ion-button expand="block" @click="moveItem">Verschieben</ion-button>
-        </ion-content>
-      </ion-modal>
-
+      <!-- Action Sheet pro Eintrag -->
       <ion-action-sheet
-          :is-open="isActionSheetOpen"
+          :is-open="actionEntry !== null"
           header="Aktionen"
-          :buttons="actionSheetButtons"
-          @didDismiss="isActionSheetOpen = false"
-      ></ion-action-sheet>
+          :buttons="actionButtons"
+          @didDismiss="actionEntry = null"
+      >
+      </ion-action-sheet>
 
+      <!-- FAB: Hinzufügen -->
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button :color="isSelectionMode ? 'medium' : 'primary'" @click="handleFabClick">
-          <ion-icon :icon="isSelectionMode ? ellipsisVertical : add"></ion-icon>
+        <ion-fab-button @click="openAddSheet" aria-label="Hinzufügen">
+          <ion-icon :icon="addOutline" />
         </ion-fab-button>
-        <ion-fab-list side="top" :activated="isSelectionMode">
-          <ion-fab-button color="danger" @click="deleteSelectedItems">
-            <ion-icon :icon="trash"></ion-icon>
-            <ion-label>Löschen</ion-label>
-          </ion-fab-button>
-          <ion-fab-button color="secondary" @click="showMoveModal">
-            <ion-icon :icon="move"></ion-icon>
-            <ion-label>Verschieben</ion-label>
-          </ion-fab-button>
-          <ion-fab-button color="tertiary" @click="showCopyModal">
-            <ion-icon :icon="copy"></ion-icon>
-            <ion-label>Kopieren</ion-label>
-          </ion-fab-button>
-        </ion-fab-list>
       </ion-fab>
+
+      <!-- Action Sheet: Hinzufügen -->
+      <ion-action-sheet
+          :is-open="isAddOpen"
+          header="Hinzufügen"
+          :buttons="addButtons"
+          @didDismiss="isAddOpen = false"
+      />
     </ion-content>
   </ion-page>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import {
-  IonContent, IonHeader, IonPage, IonTitle, IonToolbar, IonList, IonItem, IonLabel, IonText,
-  IonButton, IonModal, IonButtons, IonInput, IonSelect, IonSelectOption, IonActionSheet,
-  IonIcon, IonCheckbox, IonFab, IonFabButton, IonFabList
+  IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonList, IonItem, IonLabel,
+  IonButtons, IonButton, IonIcon, IonFab, IonFabButton, IonActionSheet, IonAvatar, IonChip
 } from '@ionic/vue';
+import { ref, computed, onMounted } from 'vue';
+import {
+  addOutline,
+  chevronBackOutline,
+  documentOutline,
+  ellipsisVertical,
+  folderOutline,
+  refreshOutline,
+  trashOutline,
+  openOutline
+} from 'ionicons/icons';
+
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
-import { FileOpener } from '@capacitor-community/file-opener';
-import { Capacitor } from '@capacitor/core';
-import { folder, document, add, remove, checkbox, trash, move, copy, ellipsisVertical } from 'ionicons/icons';
-import { ref, computed, watch, onMounted } from 'vue';
+import { FilePicker } from '@capawesome/capacitor-file-picker';
+import { Share } from '@capacitor/share';
 
-const files = ref([]);
-const errorMessage = ref('');
-const isModalOpen = ref(false);
-const newItemName = ref('');
-const newItemType = ref('file');
-const targetFolder = ref('');
-const isActionSheetOpen = ref(false);
-const isCopyModalOpen = ref(false);
-const copyTargetFolder = ref('');
-const isMoveModalOpen = ref(false);
-const moveTargetFolder = ref('');
-const selectedFile = ref(null);
-const isSelectionMode = ref(false);
-const selectedItems = ref({});
-let longPressTimer = null;
+type FsEntry = {
+  name: string;
+  fullPath: string;      // relativ zum Root (Directory.Data)
+  isDirectory: boolean;
+  size?: number;
+  mtime?: number;
+  uri?: string;          // falls Filesystem.readdir liefert
+  mimeType?: string;     // für Dateien (geschätzt über Extension)
+};
 
-const directories = computed(() => files.value.filter(file => file.isDirectory));
+const ROOT_DIR = Directory.Data; // App-intern (Android/iOS)
+const pathStack = ref<string[]>([]); // z.B. ['Fotos','Urlaub']
 
-const targetPath = computed(() => {
-  if (!newItemName.value) return '';
-  return targetFolder.value ? `${targetFolder.value}/${newItemName.value}` : `${newItemName.value}`;
-});
+const entries = ref<FsEntry[]>([]);
+const actionEntry = ref<FsEntry | null>(null);
+const isAddOpen = ref(false);
 
-const copyTargetPath = computed(() => {
-  if (!selectedFile.value || !selectedFile.value.name) return '';
-  return copyTargetFolder.value ? `${copyTargetFolder.value}/${selectedFile.value.name}` : `${selectedFile.value.name}`;
-});
+const canGoUp = computed(() => pathStack.value.length > 0);
+const displayPath = computed(() => ['/', ...pathStack.value]);
 
-const moveTargetPath = computed(() => {
-  if (!selectedFile.value || !selectedFile.value.name) return '';
-  return moveTargetFolder.value ? `${moveTargetFolder.value}/${selectedFile.value.name}` : `${selectedFile.value.name}`;
-});
+function joinPath(...parts: string[]) {
+  return parts.filter(Boolean).join('/').replace(/\/+/g, '/');
+}
 
-const filteredFiles = computed(() => {
-  return files.value.filter(file => {
-    if (!file.parentPath) return true;
-    let current = file;
-    while(current.parentPath) {
-      const parent = files.value.find(f => f.path === current.parentPath);
-      if(!parent || !parent.expanded) return false;
-      current = parent;
+function currentPath(): string {
+  return joinPath(...pathStack.value);
+}
+
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes/1024).toFixed(1)} KB`;
+  return `${(bytes/1024/1024).toFixed(1)} MB`;
+}
+
+function guessMime(name: string): string {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const map: Record<string, string> = {
+    'txt': 'text/plain',
+    'pdf': 'application/pdf',
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'gif': 'image/gif',
+    'mp4': 'video/mp4',
+    'mp3': 'audio/mpeg',
+    'json': 'application/json',
+    'csv': 'text/csv',
+    'zip': 'application/zip'
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+async function refresh() {
+  try {
+    const res = await Filesystem.readdir({
+      directory: ROOT_DIR,
+      path: currentPath() || ''
+    });
+
+    // Filesystem v6/7: { files: [{ name, type, size, mtime, uri }] }
+    const list: FsEntry[] = (res.files || []).map((f: any) => ({
+      name: f.name,
+      fullPath: joinPath(currentPath(), f.name),
+      isDirectory: f.type === 'directory',
+      size: f.size,
+      mtime: f.mtime,
+      uri: f.uri,
+      mimeType: f.type === 'file' ? guessMime(f.name) : undefined
+    }))
+        .sort((a, b) => {
+          if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+          return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+        });
+
+    entries.value = list;
+  } catch (err) {
+    console.error('readdir failed', err);
+    entries.value = [];
+  }
+}
+
+function enterFolder(entry: FsEntry) {
+  if (!entry.isDirectory) return;
+  pathStack.value.push(entry.name);
+  refresh();
+}
+
+function goUp() {
+  pathStack.value.pop();
+  refresh();
+}
+
+function openActions(entry: FsEntry) {
+  actionEntry.value = entry;
+}
+
+const actionButtons = computed(() => {
+  if (!actionEntry.value) return [];
+  const e = actionEntry.value;
+  return [
+    {
+      text: e.isDirectory ? 'Ordner öffnen' : 'Datei öffnen',
+      icon: openOutline,
+      handler: () => e.isDirectory ? enterFolder(e) : openFile(e)
+    },
+    {
+      text: 'Löschen',
+      role: 'destructive',
+      icon: trashOutline,
+      handler: () => deleteEntry(e)
+    },
+    {
+      text: 'Abbrechen',
+      role: 'cancel'
     }
-    return true;
-  });
+  ];
 });
 
-const actionSheetButtons = computed(() => [
+function openAddSheet() {
+  isAddOpen.value = true;
+}
+
+const addButtons = [
   {
-    text: 'Öffnen',
-    handler: () => {
-      if (selectedFile.value && !selectedFile.value.isDirectory) {
-        openFile(selectedFile.value);
-      }
-    }
+    text: 'Leere Datei erstellen',
+    handler: () => promptCreateFile()
   },
   {
-    text: 'Kopieren',
-    handler: () => {
-      if (selectedFile.value && !selectedFile.value.isDirectory) {
-        copyTargetFolder.value = '';
-        isCopyModalOpen.value = true;
-      }
-    }
+    text: 'Datei importieren',
+    handler: () => importFilesFromDevice()
   },
   {
-    text: 'Verschieben',
-    handler: () => {
-      if (selectedFile.value && !selectedFile.value.isDirectory) {
-        moveTargetFolder.value = '';
-        isMoveModalOpen.value = true;
-      }
-    }
-  },
-  {
-    text: 'Löschen',
-    role: 'destructive',
-    handler: () => deleteItem(selectedFile.value)
+    text: 'Ordner erstellen',
+    handler: () => promptCreateFolder()
   },
   {
     text: 'Abbrechen',
     role: 'cancel'
   }
-]);
+];
 
-const toggleFile = (file) => {
-  if (isSelectionMode.value) {
-    selectedItems.value[file.path] = !selectedItems.value[file.path];
-  } else if (file.isDirectory) {
-    toggleExpand(file);
-  } else {
-    selectedFile.value = file;
-    isActionSheetOpen.value = true;
-  }
-};
+async function promptCreateFile() {
+  const name = prompt('Dateiname (z. B. notes.txt):');
+  if (!name) return;
+  await createEmptyFile(name);
+}
 
-const toggleExpand = (file) => {
-  if (file.isDirectory) {
-    file.expanded = !file.expanded;
-  }
-};
-
-const startLongPress = (event, file) => {
-  if (!isSelectionMode.value) {
-    longPressTimer = setTimeout(() => {
-      isSelectionMode.value = true;
-      selectedItems.value[file.path] = true;
-    }, 400);
-  }
-};
-
-const clearLongPress = () => {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-  }
-};
-
-const handleFabClick = () => {
-  if (!isSelectionMode.value) {
-    showAddModal();
-  }
-  // Im Auswahlmodus wird der Button nur den Dropdown-Status togglen, aber keine zusätzliche Aktion ausführen
-};
-
-const showCopyModal = () => {
-  if (selectedFile.value && !selectedFile.value.isDirectory) {
-    copyTargetFolder.value = '';
-    isCopyModalOpen.value = true;
-  } else {
-    errorMessage.value = 'Nur Dateien können kopiert werden.';
-  }
-};
-
-const showMoveModal = () => {
-  if (selectedFile.value && !selectedFile.value.isDirectory) {
-    moveTargetFolder.value = '';
-    isMoveModalOpen.value = true;
-  } else {
-    errorMessage.value = 'Nur Dateien können verschoben werden.';
-  }
-};
-
-const readDirectoryRecursively = async (path = '', depth = 0) => {
+async function createEmptyFile(name: string) {
   try {
-    const result = await Filesystem.readdir({
-      path,
-      directory: Directory.Data
+    const finalName = await ensureUniqueName(name, /*isDir*/ false);
+    await Filesystem.writeFile({
+      directory: ROOT_DIR,
+      path: joinPath(currentPath(), finalName),
+      data: '',            // leere Datei
+      recursive: true
     });
-
-    let fileList = [];
-    for (const file of result.files) {
-      const isDirectory = file.type === 'directory';
-      const newPath = path ? `${path}/${file.name}` : file.name;
-
-      fileList.push({
-        name: file.name,
-        path: newPath,
-        isDirectory,
-        depth,
-        expanded: false,
-        parentPath: path
-      });
-
-      if (isDirectory) {
-        const subFiles = await readDirectoryRecursively(newPath, depth + 1);
-        fileList = fileList.concat(subFiles);
-      }
-    }
-    return fileList;
-  } catch (error) {
-    console.error(`Fehler beim Lesen des Verzeichnisses ${path}:`, error);
-    return [];
+    await refresh();
+  } catch (err) {
+    console.error('writeFile failed', err);
+    alert('Datei konnte nicht erstellt werden.');
+  } finally {
+    isAddOpen.value = false;
   }
-};
+}
 
-const readFileSystem = async () => {
-  try {
-    errorMessage.value = '';
-    if (Capacitor.getPlatform() === 'web') {
-      errorMessage.value = 'Dateisystemzugriff im Browser ist nicht vollumfänglich verfügbar.';
-      files.value = [];
-      return;
-    }
+async function ensureUniqueName(name: string, isDir: boolean): Promise<string> {
+  const base = name.trim();
+  if (!base) throw new Error('Ungültiger Name');
 
-    const fileList = await readDirectoryRecursively();
-    files.value = fileList.sort((a, b) => a.path.localeCompare(b.path));
-    if (files.value.length === 0) {
-      errorMessage.value = 'Keine Dateien oder Ordner gefunden.';
-    }
-  } catch (error) {
-    console.error('Fehler beim Lesen des Dateisystems:', error);
-    errorMessage.value = `Fehler beim Lesen: ${error.message}`;
-    files.value = [];
-  }
-};
+  let candidate = base;
+  let i = 1;
 
-const showAddModal = () => {
-  newItemName.value = '';
-  newItemType.value = 'file';
-  targetFolder.value = '';
-  isModalOpen.value = true;
-};
-
-const createItem = async () => {
-  try {
-    if (!newItemName.value) {
-      return;
-    }
-
-    const path = targetPath.value;
-
-    if (newItemType.value === 'file') {
-      await Filesystem.writeFile({
-        path,
-        data: 'Neue Datei',
-        directory: Directory.Data,
-        encoding: Encoding.UTF8
-      });
+  while (await entryExists(candidate, isDir)) {
+    const dot = candidate.lastIndexOf('.');
+    if (!isDir && dot > 0) {
+      const stem = candidate.slice(0, dot);
+      const ext  = candidate.slice(dot);
+      candidate = `${stem} (${i++})${ext}`;
     } else {
-      await Filesystem.mkdir({
-        path,
-        directory: Directory.Data,
-        recursive: true
-      });
+      candidate = `${base} (${i++})`;
     }
-
-    isModalOpen.value = false;
-    await readFileSystem();
-  } catch (error) {
-    console.error('Fehler beim Erstellen:', error);
-    errorMessage.value = `Fehler beim Erstellen: ${error.message}`;
   }
-};
+  return candidate;
+}
 
-const copyItem = async () => {
+async function entryExists(name: string, isDir: boolean): Promise<boolean> {
   try {
-    if (!selectedFile.value) {
-      return;
-    }
-
-    await Filesystem.copy({
-      from: selectedFile.value.path,
-      to: copyTargetPath.value,
-      directory: Directory.Data,
-      toDirectory: Directory.Data
+    const list = await Filesystem.readdir({
+      directory: ROOT_DIR,
+      path: currentPath() || ''
     });
-
-    isCopyModalOpen.value = false;
-    await readFileSystem();
-  } catch (error) {
-    console.error('Fehler beim Kopieren der Datei:', error);
-    errorMessage.value = `Fehler beim Kopieren: ${error.message}`;
+    const files: any[] = list.files || [];
+    return files.some(f => f.name === name && (isDir ? f.type === 'directory' : f.type === 'file'));
+  } catch {
+    return false;
   }
-};
+}
 
-const moveItem = async () => {
+async function promptCreateFolder() {
+  const name = prompt('Name des neuen Ordners:');
+  if (!name) return;
+  await createFolder(name);
+}
+
+async function createFolder(name: string) {
   try {
-    if (!selectedFile.value) {
-      return;
-    }
-
-    await Filesystem.move({
-      from: selectedFile.value.path,
-      to: moveTargetPath.value,
-      directory: Directory.Data,
-      toDirectory: Directory.Data
+    const finalName = await ensureUniqueName(name, /*isDir*/ true);
+    await Filesystem.mkdir({
+      directory: ROOT_DIR,
+      path: joinPath(currentPath(), finalName),
+      recursive: false
     });
-
-    isMoveModalOpen.value = false;
-    await readFileSystem();
-  } catch (error) {
-    console.error('Fehler beim Verschieben der Datei:', error);
-    errorMessage.value = `Fehler beim Verschieben: ${error.message}`;
+    await refresh();
+  } catch (err) {
+    console.error('mkdir failed', err);
+    alert('Ordner konnte nicht erstellt werden.');
+  } finally {
+    isAddOpen.value = false;
   }
-};
+}
 
-const deleteItem = async (file) => {
+async function deleteEntry(entry: FsEntry) {
   try {
-    if (file.isDirectory) {
+    if (entry.isDirectory) {
       await Filesystem.rmdir({
-        path: file.path,
-        directory: Directory.Data,
+        directory: ROOT_DIR,
+        path: entry.fullPath,
         recursive: true
       });
     } else {
       await Filesystem.deleteFile({
-        path: file.path,
-        directory: Directory.Data
+        directory: ROOT_DIR,
+        path: entry.fullPath
       });
     }
-    await readFileSystem();
-  } catch (error) {
-    console.error('Fehler beim Löschen:', error);
-    errorMessage.value = `Fehler beim Löschen: ${error.message}`;
+    await refresh();
+  } catch (err) {
+    console.error('delete failed', err);
+    alert('Löschen fehlgeschlagen.');
+  } finally {
+    actionEntry.value = null;
   }
-};
+}
 
-const deleteSelectedItems = async () => {
+/**
+ * Datei öffnen:
+ * 1) Wenn cordova-plugin-file-opener2 vorhanden ist → direkt öffnen
+ * 2) Fallback → System-Share-Sheet
+ */
+async function openFile(entry: FsEntry) {
   try {
-    const itemsToDelete = Object.keys(selectedItems.value).filter(path => selectedItems.value[path]);
+    const { uri } = await Filesystem.getUri({
+      directory: ROOT_DIR,
+      path: entry.fullPath
+    });
+    const mime = entry.mimeType || guessMime(entry.name);
 
-    for (const path of itemsToDelete) {
-      const file = files.value.find(f => f.path === path);
-      if (file) {
-        if (file.isDirectory) {
-          await Filesystem.rmdir({ path, directory: Directory.Data, recursive: true });
-        } else {
-          await Filesystem.deleteFile({ path, directory: Directory.Data });
-        }
+    const fileOpener2 = (window as any)?.cordova?.plugins?.fileOpener2;
+
+    if (fileOpener2 && typeof fileOpener2.open === 'function') {
+      await new Promise<void>((resolve, reject) => {
+        fileOpener2.open(
+            uri,
+            mime,
+            { error: (e: any) => reject(e), success: () => resolve() }
+        );
+      });
+    } else {
+      await Share.share({
+        title: entry.name,
+        url: uri,
+        dialogTitle: 'Mit App öffnen'
+      });
+    }
+  } catch (err) {
+    console.error('open file failed', err);
+    alert('Datei konnte nicht geöffnet werden.');
+  }
+}
+
+/**
+ * Dateien per System-Filepicker importieren:
+ * - multiple Auswahl
+ * - liest Base64 (readData: true) und schreibt als Datei in das aktuelle App-Verzeichnis
+ * - automatische Umbenennung bei Kollisionen
+ */
+async function importFilesFromDevice() {
+  try {
+    const res = await FilePicker.pickFiles({ multiple: true, readData: true });
+    const picked = res.files || [];
+    if (picked.length === 0) return;
+
+    for (const file of picked) {
+      const name = file.name || 'unbenannt';
+      const data = (file as any).data as string | undefined; // Base64
+      if (!data) {
+        console.warn('Kein Base64-Datenfeld enthalten, überspringe:', file);
+        continue;
       }
+
+      const targetName = await ensureUniqueName(name, /*isDir*/ false);
+      const destPath = joinPath(currentPath(), targetName);
+
+      await Filesystem.writeFile({
+        directory: ROOT_DIR,
+        path: destPath,
+        data,               // Base64
+        encoding: Encoding.BASE64,
+        recursive: true
+      });
     }
 
-    isSelectionMode.value = false;
-    selectedItems.value = {};
-    await readFileSystem();
-  } catch (error) {
-    console.error('Fehler beim Löschen mehrerer Items:', error);
-    errorMessage.value = `Fehler beim Löschen: ${error.message}`;
+    await refresh();
+  } catch (err: any) {
+    if (String(err?.message || '').toLowerCase().includes('canceled')) return;
+    console.error('importFilesFromDevice failed', err);
+    alert('Import fehlgeschlagen.');
+  } finally {
+    isAddOpen.value = false;
   }
-};
+}
 
-const openFile = async (file) => {
-  try {
-    const mimeType = getMimeType(file.name);
-
-    const fileUri = await Filesystem.getUri({
-      directory: Directory.Data,
-      path: file.path,
-    });
-
-    await FileOpener.open({
-      filePath: fileUri.uri,
-      contentType: mimeType,
-    });
-  } catch (error) {
-    console.error('Fehler beim Öffnen der Datei:', error);
-    errorMessage.value = `Fehler beim Öffnen: ${error.message || 'Datei konnte nicht geöffnet werden.'}`;
-  }
-};
-
-const getMimeType = (filename) => {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-  const mimeTypes = {
-    txt: 'text/plain',
-    pdf: 'application/pdf',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    png: 'image/png',
-    mp4: 'video/mp4',
-    doc: 'application/msword',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    xls: 'application/vnd.ms-excel',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  };
-  return mimeTypes[ext] || 'application/octet-stream';
-};
-
-watch(selectedItems, (newVal) => {
-  if (isSelectionMode.value && Object.values(newVal).every(val => !val)) {
-    isSelectionMode.value = false;
-    selectedItems.value = {};
-  }
-}, { deep: true });
-
-onMounted(() => {
-  readFileSystem();
-});
+onMounted(() => refresh());
 </script>
 
 <style scoped>
-ion-icon {
-  font-size: 24px;
+ion-avatar {
+  --border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  background: #eef2ff;
 }
-ion-item {
-  --inner-padding-start: 16px;
-}
-.ion-padding {
-  padding: 16px;
-}
-ion-fab-button {
-  --background: var(--ion-color-primary);
-  --background-activated: var(--ion-color-primary-shade);
-}
-ion-fab-button[color="medium"] {
-  --background: var(--ion-color-medium);
-  --background-activated: var(--ion-color-medium-shade);
-}
-ion-fab-list ion-fab-button {
-  --background: var(--ion-color-danger);
-  --background-activated: var(--ion-color-danger-shade);
-}
-ion-fab-list ion-fab-button:nth-child(2) {
-  --background: var(--ion-color-secondary);
-  --background-activated: var(--ion-color-secondary-shade);
-}
-ion-fab-list ion-fab-button:nth-child(3) {
-  --background: var(--ion-color-tertiary);
-  --background-activated: var(--ion-color-tertiary-shade);
+
+/* Mehr Luft zwischen Pfadleiste (Header) und Liste */
+.with-gap {
+  --padding-top: 16px;
 }
 </style>
-```
